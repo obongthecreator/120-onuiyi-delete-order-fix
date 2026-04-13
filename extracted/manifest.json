@@ -1,0 +1,26 @@
+{
+    "name": "120 Stand Inventory",
+    "short_name": "120 Stand",
+    "description": "Inventory Management System for 120 Stand",
+    "start_url": "/120-stand/",
+    "display": "standalone",
+    "background_color": "#FFF5F5",
+    "theme_color": "#8B0000",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "assets/images/logo.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "assets/images/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": ["business", "productivity"],
+    "lang": "en-NG"
+}
