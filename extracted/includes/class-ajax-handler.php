@@ -74,6 +74,9 @@ class Stand120_Ajax_Handler {
             case 'get_order':
                 self::get_order();
                 break;
+            case 'delete_order':
+                self::delete_order();
+                break;
             
             // Order Preparation actions
             case 'save_order_preparation':
@@ -386,6 +389,31 @@ class Stand120_Ajax_Handler {
             wp_send_json_success(array('order' => $order));
         } else {
             wp_send_json_error(array('message' => 'Order not found'));
+        }
+    }
+    
+    /**
+     * Delete an order
+     */
+    private static function delete_order() {
+        if (!Stand120_Auth::is_admin()) {
+            wp_send_json_error(array('message' => 'Unauthorized - Admin access required'));
+            return;
+        }
+        
+        $order_id = intval($_POST['order_id'] ?? 0);
+        
+        if (!$order_id) {
+            wp_send_json_error(array('message' => 'Order ID is required'));
+            return;
+        }
+        
+        $result = Stand120_Take_Order::delete_order($order_id);
+        
+        if ($result['success']) {
+            wp_send_json_success($result);
+        } else {
+            wp_send_json_error($result);
         }
     }
     

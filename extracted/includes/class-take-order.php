@@ -318,6 +318,58 @@ class Stand120_Take_Order {
     }
     
     /**
+     * Delete an order and reverse its financial summary impact
+     */
+    public static function delete_order($order_id) {
+        global $wpdb;
+        $orders_table = $wpdb->prefix . 'stand120_orders';
+        $items_table = $wpdb->prefix . 'stand120_order_items';
+        $financial_table = $wpdb->prefix . 'stand120_financial_summary';
+        
+        // Get the order first
+        $order = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $orders_table WHERE id = %d",
+            $order_id
+        ));
+        
+        if (!$order) {
+            return array('success' => false, 'message' => 'Order not found');
+        }
+        
+        // Reverse financial summary for the order's date
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $financial_table WHERE summary_date = %s",
+            $order->order_date
+        ));
+        
+        if ($existing) {
+            $new_total_sales = max(0, $existing->total_sales - floatval($order->grand_total));
+            $new_cash_sales = max(0, $existing->cash_sales - floatval($order->cash_amount));
+            $new_transfer_sales = max(0, $existing->transfer_sales - floatval($order->transfer_amount));
+            $new_delivery_fees = max(0, $existing->delivery_fees - floatval($order->delivery_fee));
+            $new_cash_left = ($new_cash_sales + $existing->old_cash + $existing->extras_amount) - $existing->expenses_amount;
+            
+            $wpdb->update($financial_table, array(
+                'total_sales' => $new_total_sales,
+                'cash_sales' => $new_cash_sales,
+                'transfer_sales' => $new_transfer_sales,
+                'delivery_fees' => $new_delivery_fees,
+                'cash_left' => $new_cash_left
+            ), array('id' => $existing->id));
+        }
+        
+        // Delete order items
+        $wpdb->delete($items_table, array('order_id' => $order_id));
+        
+        // Delete the order
+        $wpdb->delete($orders_table, array('id' => $order_id));
+        
+        Stand120_Database::log_activity('delete_order', 'stand120_orders', $order_id);
+        
+        return array('success' => true, 'message' => 'Order deleted successfully');
+    }
+    
+    /**
      * Get today's orders summary
      */
     public static function get_today_summary() {
