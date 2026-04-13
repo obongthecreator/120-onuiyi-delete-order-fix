@@ -184,6 +184,12 @@ class Stand120_Ajax_Handler {
             case 'get_analytics':
                 self::get_analytics();
                 break;
+            case 'get_sales_insights':
+                self::get_sales_insights();
+                break;
+            case 'get_target_recommendation':
+                self::get_target_recommendation();
+                break;
             case 'export_data':
                 self::export_data();
                 break;
@@ -903,6 +909,11 @@ class Stand120_Ajax_Handler {
                     $date_from = date('Y-m-01', $reference_timestamp);
                     $date_to = date('Y-m-t', $reference_timestamp);
                     break;
+                case 'yearly':
+                    $date_from = date('Y-01-01', $reference_timestamp);
+                    $date_to = date('Y-12-31', $reference_timestamp);
+                    break;
+                    break;
             }
         }
         
@@ -1070,6 +1081,67 @@ class Stand120_Ajax_Handler {
                     $date_from, $date_to
                 ));
                 
+                // Compute revenue, expenses, profit, and loss
+                $revenue = floatval($analytics['total_sales']);
+                
+                // Get detailed expenses from the expenses table
+                $expenses_table = $wpdb->prefix . 'stand120_expenses';
+                $total_market_expenses = floatval($wpdb->get_var($wpdb->prepare(
+                    "SELECT SUM(amount) FROM $expenses_table WHERE expense_date BETWEEN %s AND %s",
+                    $date_from, $date_to
+                )));
+                
+                $fin_expenses = floatval($analytics['financials']->expenses_amount ?? 0);
+                // Use the greater of financial summary expenses or direct market expenses to avoid double-counting
+                $total_all_expenses = max($fin_expenses, $total_market_expenses);
+                
+                $profit = $revenue - $total_all_expenses;
+                $loss = $profit < 0 ? abs($profit) : 0;
+                if ($profit < 0) {
+                    $profit = 0;
+                }
+                
+                $analytics['revenue'] = $revenue;
+                $analytics['profit'] = $profit;
+                $analytics['total_all_expenses'] = $total_all_expenses;
+                $analytics['loss'] = $loss;
+                
+                // Product Revenue Attribution (all products with unit price)
+                $analytics['product_revenue'] = $wpdb->get_results($wpdb->prepare(
+                    "SELECT oi.product_name, 
+                        SUM(oi.quantity) as qty_sold, 
+                        oi.price as unit_price,
+                        SUM(oi.total) as revenue
+                    FROM $items_table oi
+                    JOIN $orders_table o ON oi.order_id = o.id
+                    WHERE o.order_date BETWEEN %s AND %s
+                    GROUP BY oi.product_id, oi.price
+                    ORDER BY revenue DESC",
+                    $date_from, $date_to
+                ));
+                
+                // Detailed expenses breakdown
+                $analytics['detailed_expenses'] = $wpdb->get_results($wpdb->prepare(
+                    "SELECT description, COUNT(*) as total_qty, SUM(amount) as total_amount
+                    FROM $expenses_table
+                    WHERE expense_date BETWEEN %s AND %s
+                    GROUP BY description
+                    ORDER BY total_amount DESC",
+                    $date_from, $date_to
+                ));
+                
+                // Day-of-week sales for smart insights
+                $analytics['dow_sales'] = $wpdb->get_results($wpdb->prepare(
+                    "SELECT DAYOFWEEK(order_date) as dow, 
+                        DAYNAME(order_date) as day_name,
+                        SUM(grand_total) as total
+                    FROM $orders_table
+                    WHERE order_date BETWEEN %s AND %s
+                    GROUP BY DAYOFWEEK(order_date), DAYNAME(order_date)
+                    ORDER BY dow ASC",
+                    $date_from, $date_to
+                ));
+                
                 $analytics['period'] = array(
                     'date_from' => $date_from,
                     'date_to' => $date_to,
@@ -1092,6 +1164,172 @@ class Stand120_Ajax_Handler {
         }
         
         wp_send_json_success(array('analytics' => $analytics));
+    }
+
+    /**
+     * Get sales insights for product availability schedule
+     */
+    private static function get_sales_insights() {
+        global $wpdb;
+        $orders_table = $wpdb->prefix . 'stand120_orders';
+        $items_table = $wpdb->prefix . 'stand120_order_items';
+        
+        // Analyze order data from the last 30 days
+        $date_from = date('Y-m-d', strtotime('-30 days'));
+        $date_to = date('Y-m-d');
+        
+        // Get best time of day per product
+        $time_data = $wpdb->get_results($wpdb->prepare(
+            "SELECT oi.product_name,
+                CASE 
+                    WHEN HOUR(o.order_time) < 12 THEN 'Morning (Before 12pm)'
+                    WHEN HOUR(o.order_time) < 15 THEN 'Afternoon (12pm-3pm)'
+                    WHEN HOUR(o.order_time) < 18 THEN 'Late Afternoon (3pm-6pm)'
+                    ELSE 'Evening (After 6pm)'
+                END as time_slot,
+                SUM(oi.quantity) as qty
+            FROM $items_table oi
+            JOIN $orders_table o ON oi.order_id = o.id
+            WHERE o.order_date BETWEEN %s AND %s
+            GROUP BY oi.product_id, time_slot
+            ORDER BY oi.product_name, qty DESC",
+            $date_from, $date_to
+        ));
+        
+        // Get best day of week per product
+        $day_data = $wpdb->get_results($wpdb->prepare(
+            "SELECT oi.product_name,
+                DAYNAME(o.order_date) as day_name,
+                SUM(oi.quantity) as qty
+            FROM $items_table oi
+            JOIN $orders_table o ON oi.order_id = o.id
+            WHERE o.order_date BETWEEN %s AND %s
+            GROUP BY oi.product_id, DAYOFWEEK(o.order_date)
+            ORDER BY oi.product_name, qty DESC",
+            $date_from, $date_to
+        ));
+        
+        // Aggregate: best time and best day per product
+        $products = array();
+        
+        foreach ($time_data as $row) {
+            $name = $row->product_name;
+            if (!isset($products[$name]) || intval($row->qty) > intval($products[$name]['best_time_qty'])) {
+                if (!isset($products[$name])) {
+                    $products[$name] = array(
+                        'product_name' => $name,
+                        'best_time' => '-',
+                        'best_time_qty' => 0,
+                        'best_day' => '-',
+                        'best_day_qty' => 0
+                    );
+                }
+                $products[$name]['best_time'] = $row->time_slot;
+                $products[$name]['best_time_qty'] = intval($row->qty);
+            }
+        }
+        
+        foreach ($day_data as $row) {
+            $name = $row->product_name;
+            if (!isset($products[$name])) {
+                $products[$name] = array(
+                    'product_name' => $name,
+                    'best_time' => '-',
+                    'best_time_qty' => 0,
+                    'best_day' => '-',
+                    'best_day_qty' => 0
+                );
+            }
+            if (intval($row->qty) > intval($products[$name]['best_day_qty'])) {
+                $products[$name]['best_day'] = $row->day_name;
+                $products[$name]['best_day_qty'] = intval($row->qty);
+            }
+        }
+        
+        wp_send_json_success(array('recommendations' => array_values($products)));
+    }
+
+    /**
+     * Get target recommendation for sales target calculator
+     */
+    private static function get_target_recommendation() {
+        global $wpdb;
+        $orders_table = $wpdb->prefix . 'stand120_orders';
+        $items_table = $wpdb->prefix . 'stand120_order_items';
+        $products_table = $wpdb->prefix . 'stand120_products';
+        
+        $target_amount = floatval($_POST['target_amount'] ?? 0);
+        if ($target_amount <= 0) {
+            wp_send_json_error(array('message' => 'Please enter a valid target amount'));
+            return;
+        }
+        
+        // Get average daily sales per product from last 30 days
+        $date_from = date('Y-m-d', strtotime('-30 days'));
+        $date_to = date('Y-m-d');
+        
+        // Count distinct days with orders in the period
+        $days_with_orders = intval($wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(DISTINCT order_date) FROM $orders_table WHERE order_date BETWEEN %s AND %s",
+            $date_from, $date_to
+        )));
+        if ($days_with_orders < 1) {
+            $days_with_orders = 1;
+        }
+        
+        $product_stats = $wpdb->get_results($wpdb->prepare(
+            "SELECT oi.product_name, 
+                p.price,
+                SUM(oi.quantity) as total_qty,
+                SUM(oi.total) as total_revenue
+            FROM $items_table oi
+            JOIN $orders_table o ON oi.order_id = o.id
+            LEFT JOIN $products_table p ON oi.product_id = p.id
+            WHERE o.order_date BETWEEN %s AND %s
+            GROUP BY oi.product_id
+            ORDER BY total_revenue DESC",
+            $date_from, $date_to
+        ));
+        
+        $recommendations = array();
+        $total_projected = 0;
+        
+        // Pre-compute total daily revenue across all products
+        $total_daily_revenue = 0;
+        foreach ($product_stats as $p) {
+            $total_daily_revenue += floatval($p->total_revenue) / $days_with_orders;
+        }
+        
+        foreach ($product_stats as $product) {
+            $price = floatval($product->price);
+            if ($price <= 0) continue;
+            
+            $avg_daily_sales = floatval($product->total_qty) / $days_with_orders;
+            
+            // Scale suggested qty to meet target proportionally
+            $daily_revenue = floatval($product->total_revenue) / $days_with_orders;
+            
+            $proportion = $total_daily_revenue > 0 ? ($daily_revenue / $total_daily_revenue) : 0;
+            $product_target = $target_amount * $proportion;
+            $suggested_qty = $price > 0 ? ceil($product_target / $price) : 0;
+            $projected_revenue = $suggested_qty * $price;
+            $total_projected += $projected_revenue;
+            
+            $recommendations[] = array(
+                'product_name' => $product->product_name,
+                'price' => $price,
+                'suggested_qty' => $suggested_qty,
+                'avg_daily_sales' => round($avg_daily_sales, 1),
+                'projected_revenue' => $projected_revenue
+            );
+        }
+        
+        wp_send_json_success(array(
+            'target' => $target_amount,
+            'total_projected' => $total_projected,
+            'achievable' => $total_projected >= $target_amount,
+            'recommendations' => $recommendations
+        ));
     }
 
     /**
