@@ -39,7 +39,7 @@ class Stand120_Reconciliation {
         }
         
         // Self-heal: clean up any corrupted rows with 0000-00-00 date
-        $wpdb->query("DELETE FROM $table WHERE reconcile_date = '0000-00-00'");
+        $wpdb->query($wpdb->prepare("DELETE FROM $table WHERE reconcile_date = %s", '0000-00-00'));
         
         // Fix stale unique key: drop the old single-column unique key if it exists
         // WordPress dbDelta cannot drop keys, so we must do it manually
@@ -149,7 +149,9 @@ class Stand120_Reconciliation {
         foreach ($keys as $key_name => $info) {
             // Drop any unique key that covers ONLY reconcile_date (single column, not composite)
             if ($info['unique'] && count($info['columns']) === 1 && $info['columns'][0] === 'reconcile_date') {
-                $wpdb->query("ALTER TABLE $table DROP INDEX `$key_name`");
+                // Sanitize key name to alphanumeric and underscores only
+                $safe_key_name = preg_replace('/[^a-zA-Z0-9_]/', '', $key_name);
+                $wpdb->query("ALTER TABLE $table DROP INDEX `$safe_key_name`");
             }
         }
         
