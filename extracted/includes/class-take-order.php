@@ -182,7 +182,7 @@ class Stand120_Take_Order {
             $new_cash_sales = $existing->cash_sales + $cash_amount;
             $new_transfer_sales = $existing->transfer_sales + $transfer_amount;
             $new_delivery_fees = $existing->delivery_fees + $delivery_fee;
-            $new_cash_left = ($new_cash_sales + $existing->old_cash + $existing->extras_amount) - $existing->expenses_amount;
+            $new_cash_left = ($new_cash_sales + $existing->old_cash + floatval($existing->market_card_expense ?? 0) + $existing->extras_amount) - $existing->expenses_amount;
             
             $wpdb->update($table, array(
                 'total_sales' => $new_total_sales,
@@ -201,7 +201,7 @@ class Stand120_Take_Order {
             $old_cash = $prev_record ? floatval($prev_record->cash_left) : 0;
             
             // Create new record
-            $cash_left = ($cash_amount + $old_cash); // No expenses yet
+            $cash_left = ($cash_amount + $old_cash); // No expenses or card expense yet
             
             $wpdb->insert($table, array(
                 'summary_date' => $today,
@@ -347,7 +347,7 @@ class Stand120_Take_Order {
             $new_cash_sales = max(0, $existing->cash_sales - floatval($order->cash_amount));
             $new_transfer_sales = max(0, $existing->transfer_sales - floatval($order->transfer_amount));
             $new_delivery_fees = max(0, $existing->delivery_fees - floatval($order->delivery_fee));
-            $new_cash_left = ($new_cash_sales + $existing->old_cash + $existing->extras_amount) - $existing->expenses_amount;
+            $new_cash_left = ($new_cash_sales + $existing->old_cash + floatval($existing->market_card_expense ?? 0) + $existing->extras_amount) - $existing->expenses_amount;
             
             $wpdb->update($financial_table, array(
                 'total_sales' => $new_total_sales,

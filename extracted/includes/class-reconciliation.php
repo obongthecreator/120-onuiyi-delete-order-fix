@@ -29,6 +29,10 @@ class Stand120_Reconciliation {
             return array('success' => false, 'message' => 'Only admins can reconcile records');
         }
         
+        if (empty($staff_id)) {
+            return array('success' => false, 'message' => 'Could not identify staff member. Please logout and login again.');
+        }
+        
         // Check if this admin already reconciled this date
         $existing = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM $table WHERE reconcile_date = %s AND staff_id = %d",
@@ -37,10 +41,13 @@ class Stand120_Reconciliation {
         
         if ($existing) {
             // Update existing reconciliation
-            $wpdb->update($table, array(
-                'remark' => $remark,
-                'updated_at' => current_time('mysql')
+            $update_result = $wpdb->update($table, array(
+                'remark' => $remark
             ), array('id' => $existing->id));
+            
+            if ($update_result === false) {
+                return array('success' => false, 'message' => 'Failed to update reconciliation: ' . $wpdb->last_error);
+            }
             
             Stand120_Database::log_activity('update_reconciliation', 'stand120_reconciliation', $existing->id);
             
@@ -57,17 +64,15 @@ class Stand120_Reconciliation {
             return array('success' => false, 'message' => 'This date has already been fully reconciled by 2 admins');
         }
         
-        // Insert new reconciliation
+        // Insert new reconciliation (let DB defaults handle timestamps)
         $result = $wpdb->insert($table, array(
             'reconcile_date' => $date,
             'staff_id' => $staff_id,
-            'remark' => $remark,
-            'created_at' => current_time('mysql'),
-            'updated_at' => current_time('mysql')
+            'remark' => $remark
         ));
         
         if ($result === false) {
-            return array('success' => false, 'message' => 'Failed to save reconciliation');
+            return array('success' => false, 'message' => 'Failed to save reconciliation: ' . $wpdb->last_error);
         }
         
         Stand120_Database::log_activity('submit_reconciliation', 'stand120_reconciliation', $wpdb->insert_id);

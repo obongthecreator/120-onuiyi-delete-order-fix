@@ -696,6 +696,12 @@ class Stand120_Ajax_Handler {
             'per_page' => intval($_POST['per_page'] ?? 20)
         );
         
+        // Self-heal: recalculate any records with wrong cash_left before returning
+        Stand120_Financial_Summary::recalculate_records(
+            !empty($filters['date_from']) ? $filters['date_from'] : null,
+            !empty($filters['date_to']) ? $filters['date_to'] : null
+        );
+        
         $result = Stand120_Financial_Summary::get_history($filters);
         wp_send_json_success($result);
     }
@@ -912,7 +918,6 @@ class Stand120_Ajax_Handler {
                 case 'yearly':
                     $date_from = date('Y-01-01', $reference_timestamp);
                     $date_to = date('Y-12-31', $reference_timestamp);
-                    break;
                     break;
             }
         }
