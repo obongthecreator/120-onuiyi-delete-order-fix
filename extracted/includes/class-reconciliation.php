@@ -25,6 +25,11 @@ class Stand120_Reconciliation {
             return array('success' => false, 'message' => 'Date is required');
         }
         
+        // Strict date format validation - must be valid YYYY-MM-DD
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+            return array('success' => false, 'message' => 'Invalid date format. Expected YYYY-MM-DD, got: ' . $date);
+        }
+        
         if (!Stand120_Auth::is_admin()) {
             return array('success' => false, 'message' => 'Only admins can reconcile records');
         }
@@ -32,6 +37,13 @@ class Stand120_Reconciliation {
         if (empty($staff_id)) {
             return array('success' => false, 'message' => 'Could not identify staff member. Please logout and login again.');
         }
+        
+        // Self-heal: clean up any corrupted rows with 0000-00-00 date
+        $wpdb->query("DELETE FROM $table WHERE reconcile_date = '0000-00-00'");
+        
+        // Fix stale unique key: drop the old single-column unique key if it exists
+        // WordPress dbDelta cannot drop keys, so we must do it manually
+        self::fix_table_keys();
         
         // Check if this admin already reconciled this date
         $existing = $wpdb->get_row($wpdb->prepare(
@@ -41,9 +53,16 @@ class Stand120_Reconciliation {
         
         if ($existing) {
             // Update existing reconciliation
-            $update_result = $wpdb->update($table, array(
-                'remark' => $remark
-            ), array('id' => $existing->id));
+            $update_result = $wpdb->update(
+                $table,
+                array(
+                    'remark' => $remark,
+                    'updated_at' => current_time('mysql')
+                ),
+                array('id' => $existing->id),
+                array('%s', '%s'),
+                array('%d')
+            );
             
             if ($update_result === false) {
                 return array('success' => false, 'message' => 'Failed to update reconciliation: ' . $wpdb->last_error);
@@ -64,12 +83,18 @@ class Stand120_Reconciliation {
             return array('success' => false, 'message' => 'This date has already been fully reconciled by 2 admins');
         }
         
-        // Insert new reconciliation (let DB defaults handle timestamps)
-        $result = $wpdb->insert($table, array(
-            'reconcile_date' => $date,
-            'staff_id' => $staff_id,
-            'remark' => $remark
-        ));
+        // Insert new reconciliation with explicit format specifiers and timestamps
+        $result = $wpdb->insert(
+            $table,
+            array(
+                'reconcile_date' => $date,
+                'staff_id' => $staff_id,
+                'remark' => $remark,
+                'created_at' => current_time('mysql'),
+                'updated_at' => current_time('mysql')
+            ),
+            array('%s', '%d', '%s', '%s', '%s')
+        );
         
         if ($result === false) {
             return array('success' => false, 'message' => 'Failed to save reconciliation: ' . $wpdb->last_error);
@@ -90,6 +115,49 @@ class Stand120_Reconciliation {
             'message' => $is_complete ? 'Date fully reconciled by both admins' : 'Reconciliation submitted. Waiting for second admin.',
             'is_complete' => $is_complete
         );
+    }
+    
+    /**
+     * Fix table keys - drop any stale single-column unique key on reconcile_date
+     * that prevents multiple admins from reconciling the same date.
+     * The correct key is the composite UNIQUE KEY date_staff (reconcile_date, staff_id).
+     */
+    private static function fix_table_keys() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'stand120_reconciliation';
+        
+        // Get all indexes on the table
+        $indexes = $wpdb->get_results("SHOW INDEX FROM $table");
+        if (!$indexes) {
+            return;
+        }
+        
+        // Look for any UNIQUE key that is ONLY on reconcile_date (not composite with staff_id)
+        $keys = array();
+        foreach ($indexes as $idx) {
+            $key_name = $idx->Key_name;
+            if ($key_name === 'PRIMARY') continue;
+            if (!isset($keys[$key_name])) {
+                $keys[$key_name] = array(
+                    'unique' => !$idx->Non_unique,
+                    'columns' => array()
+                );
+            }
+            $keys[$key_name]['columns'][] = $idx->Column_name;
+        }
+        
+        foreach ($keys as $key_name => $info) {
+            // Drop any unique key that covers ONLY reconcile_date (single column, not composite)
+            if ($info['unique'] && count($info['columns']) === 1 && $info['columns'][0] === 'reconcile_date') {
+                $wpdb->query("ALTER TABLE $table DROP INDEX `$key_name`");
+            }
+        }
+        
+        // Ensure the correct composite unique key exists
+        $has_composite = isset($keys['date_staff']);
+        if (!$has_composite) {
+            $wpdb->query("ALTER TABLE $table ADD UNIQUE KEY date_staff (reconcile_date, staff_id)");
+        }
     }
     
     /**
