@@ -245,6 +245,65 @@ class Stand120_Database {
             KEY reconcile_date (reconcile_date)
         ) $charset_collate;";
         dbDelta($sql_reconciliation);
+        
+        // Repair reconciliation table keys after dbDelta.
+        // dbDelta cannot drop stale keys, so if an old single-column UNIQUE KEY
+        // on reconcile_date exists (e.g. 'reconciliation_date'), it blocks
+        // the 2-admin design. Fix it here during activation/upgrade.
+        self::repair_reconciliation_keys();
+    }
+    
+    /**
+     * Repair reconciliation table keys.
+     * Drops any stale single-column UNIQUE KEY on reconcile_date and
+     * ensures the correct composite UNIQUE KEY date_staff exists.
+     * Also cleans up any corrupted 0000-00-00 rows.
+     */
+    public static function repair_reconciliation_keys() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'stand120_reconciliation';
+        
+        // Check table exists first
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if (!$table_exists) {
+            return;
+        }
+        
+        // Clean up any corrupted rows with 0000-00-00 date
+        $wpdb->query($wpdb->prepare("DELETE FROM $table WHERE reconcile_date = %s", '0000-00-00'));
+        
+        // Get all indexes on the table
+        $indexes = $wpdb->get_results("SHOW INDEX FROM $table");
+        if (!$indexes) {
+            return;
+        }
+        
+        // Build a map of key names to their columns
+        $keys = array();
+        foreach ($indexes as $idx) {
+            $key_name = $idx->Key_name;
+            if ($key_name === 'PRIMARY') continue;
+            if (!isset($keys[$key_name])) {
+                $keys[$key_name] = array(
+                    'unique' => !$idx->Non_unique,
+                    'columns' => array()
+                );
+            }
+            $keys[$key_name]['columns'][] = $idx->Column_name;
+        }
+        
+        // Drop any single-column UNIQUE key on reconcile_date alone
+        foreach ($keys as $key_name => $info) {
+            if ($info['unique'] && count($info['columns']) === 1 && $info['columns'][0] === 'reconcile_date') {
+                $safe_key_name = preg_replace('/[^a-zA-Z0-9_]/', '', $key_name);
+                $wpdb->query("ALTER TABLE $table DROP INDEX `$safe_key_name`");
+            }
+        }
+        
+        // Ensure the composite unique key exists
+        if (!isset($keys['date_staff'])) {
+            $wpdb->query("ALTER TABLE $table ADD UNIQUE KEY date_staff (reconcile_date, staff_id)");
+        }
     }
     
     /**
