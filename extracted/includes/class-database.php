@@ -296,7 +296,9 @@ class Stand120_Database {
         foreach ($keys as $key_name => $info) {
             if ($info['unique'] && count($info['columns']) === 1 && $info['columns'][0] === 'reconcile_date') {
                 $safe_key_name = preg_replace('/[^a-zA-Z0-9_]/', '', $key_name);
-                $wpdb->query("ALTER TABLE $table DROP INDEX `$safe_key_name`");
+                if (!empty($safe_key_name)) {
+                    $wpdb->query("ALTER TABLE $table DROP INDEX `$safe_key_name`");
+                }
             }
         }
         

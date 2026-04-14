@@ -92,7 +92,9 @@ class Stand120_Reconciliation {
                 && $info['columns'][0] === 'reconcile_date'
             ) {
                 $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $kn);
-                $wpdb->query("ALTER TABLE $table DROP INDEX `$safe`");
+                if (!empty($safe)) {
+                    $wpdb->query("ALTER TABLE $table DROP INDEX `$safe`");
+                }
             }
         }
 
@@ -148,7 +150,7 @@ class Stand120_Reconciliation {
         if (!self::is_valid_date($date)) {
             return array(
                 'success' => false,
-                'message' => 'Invalid date format. Expected YYYY-MM-DD, got: ' . $date,
+                'message' => 'Invalid date format. Expected YYYY-MM-DD, got: ' . esc_html($date),
             );
         }
 
