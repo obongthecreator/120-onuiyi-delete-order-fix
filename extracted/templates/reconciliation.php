@@ -1,6 +1,7 @@
 <?php
 /**
- * Reconciliation Calendar Page Template
+ * Reconciliation Page Template — rebuilt from scratch.
+ * Calendar view + History tab.
  */
 
 if (!defined('ABSPATH')) {
@@ -44,7 +45,7 @@ include STAND120_PLUGIN_DIR . 'templates/partials/header.php';
 
 <h1 class="page-title">
     <i class="fas fa-calendar-check"></i>
-    Reconciliation Calendar
+    Reconciliation
 </h1>
 
 <p style="color: var(--text-muted); margin-bottom: 20px;">
@@ -52,52 +53,90 @@ include STAND120_PLUGIN_DIR . 'templates/partials/header.php';
     Both admins must reconcile each date's records. Once 2 admins have submitted, the date is locked.
 </p>
 
-<!-- Calendar Navigation -->
+<!-- Tab Navigation -->
 <div class="glass-card" style="margin-bottom: 20px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-        <button id="prevMonth" class="btn btn-secondary btn-sm">
-            <i class="fas fa-chevron-left"></i> Previous
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-primary reconcile-tab active" data-tab="calendar">
+            <i class="fas fa-calendar-alt"></i> Calendar
         </button>
-        <h3 id="calendarMonth" style="color: var(--primary-color); margin: 0;"></h3>
-        <button id="nextMonth" class="btn btn-secondary btn-sm">
-            Next <i class="fas fa-chevron-right"></i>
+        <button class="btn btn-secondary reconcile-tab" data-tab="history">
+            <i class="fas fa-history"></i> History
         </button>
     </div>
 </div>
 
-<!-- Legend -->
-<div class="glass-card" style="margin-bottom: 20px;">
-    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="width: 20px; height: 20px; border-radius: 4px; background: #28a745; display: inline-block;"></span>
-            <span style="color: var(--text-secondary); font-size: 0.9rem;">Fully Reconciled (2 admins)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="width: 20px; height: 20px; border-radius: 4px; background: #ffc107; display: inline-block;"></span>
-            <span style="color: var(--text-secondary); font-size: 0.9rem;">Partially Reconciled (1 admin)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.1); border: 1px solid var(--border-glass); display: inline-block;"></span>
-            <span style="color: var(--text-secondary); font-size: 0.9rem;">Not Reconciled</span>
+<!-- ═══════════════════════════════════════════════════════
+     CALENDAR TAB
+     ═══════════════════════════════════════════════════════ -->
+<div id="calendarTab">
+
+    <!-- Calendar Navigation -->
+    <div class="glass-card" style="margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <button id="prevMonth" class="btn btn-secondary btn-sm">
+                <i class="fas fa-chevron-left"></i> Previous
+            </button>
+            <h3 id="calendarMonth" style="color: var(--primary-color); margin: 0;"></h3>
+            <button id="nextMonth" class="btn btn-secondary btn-sm">
+                Next <i class="fas fa-chevron-right"></i>
+            </button>
         </div>
     </div>
-</div>
 
-<!-- Calendar Grid -->
-<div class="glass-card">
-    <div class="reconciliation-calendar" id="reconciliationCalendar">
-        <!-- Calendar rendered via JS -->
+    <!-- Legend -->
+    <div class="glass-card" style="margin-bottom: 20px;">
+        <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="width: 20px; height: 20px; border-radius: 4px; background: #28a745; display: inline-block;"></span>
+                <span style="color: var(--text-secondary); font-size: 0.9rem;">Fully Reconciled (2 admins)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="width: 20px; height: 20px; border-radius: 4px; background: #ffc107; display: inline-block;"></span>
+                <span style="color: var(--text-secondary); font-size: 0.9rem;">Partially Reconciled (1 admin)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.1); border: 1px solid var(--border-glass); display: inline-block;"></span>
+                <span style="color: var(--text-secondary); font-size: 0.9rem;">Not Reconciled</span>
+            </div>
+        </div>
     </div>
-</div>
 
-<!-- Reconciliation Modal -->
+    <!-- Calendar Grid -->
+    <div class="glass-card">
+        <div class="reconciliation-calendar" id="reconciliationCalendar">
+            <!-- Calendar rendered via JS -->
+        </div>
+    </div>
+
+</div><!-- /calendarTab -->
+
+<!-- ═══════════════════════════════════════════════════════
+     HISTORY TAB
+     ═══════════════════════════════════════════════════════ -->
+<div id="historyTab" style="display: none;">
+    <div class="glass-card">
+        <h3 style="color: var(--primary-color); margin-bottom: 16px;">
+            <i class="fas fa-history"></i> Reconciliation History
+        </h3>
+        <div id="reconciliationHistoryList">
+            <p style="color: var(--text-muted); text-align: center; padding: 40px 0;">
+                <i class="fas fa-spinner fa-spin"></i> Loading history…
+            </p>
+        </div>
+        <div id="historyPagination" style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;"></div>
+    </div>
+</div><!-- /historyTab -->
+
+<!-- ═══════════════════════════════════════════════════════
+     RECONCILE MODAL
+     ═══════════════════════════════════════════════════════ -->
 <div id="reconcileModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); justify-content: center; align-items: center; padding: 20px;">
     <div style="background: var(--glass-bg, #1a1a2e); border: 1px solid var(--border-glass, rgba(255,255,255,0.1)); border-radius: 16px; padding: 32px; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto;">
         <h3 style="color: var(--primary-color); margin-bottom: 8px;">
             <i class="fas fa-calendar-check"></i> Reconcile Date
         </h3>
         <p id="reconcileDate" style="color: var(--text-muted); margin-bottom: 20px; font-size: 1.1rem;"></p>
-        
+
         <!-- Previous reconciliations -->
         <div id="previousReconciliations" style="margin-bottom: 20px; display: none;">
             <h4 style="color: var(--text-secondary); margin-bottom: 12px;">
@@ -105,7 +144,7 @@ include STAND120_PLUGIN_DIR . 'templates/partials/header.php';
             </h4>
             <div id="reconciliationList"></div>
         </div>
-        
+
         <!-- Reconciliation form -->
         <div id="reconcileForm">
             <div class="form-group">
@@ -121,7 +160,7 @@ include STAND120_PLUGIN_DIR . 'templates/partials/header.php';
                 </button>
             </div>
         </div>
-        
+
         <!-- Already complete message -->
         <div id="reconcileComplete" style="display: none;">
             <div style="text-align: center; padding: 20px; color: #28a745;">
@@ -136,128 +175,72 @@ include STAND120_PLUGIN_DIR . 'templates/partials/header.php';
 </div>
 
 <style>
-.reconciliation-calendar {
-    width: 100%;
-}
+/* ── Calendar ───────────────────────────────────────── */
+.reconciliation-calendar { width: 100%; }
 .reconciliation-calendar .cal-header {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-    margin-bottom: 8px;
+    display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; margin-bottom: 8px;
 }
 .reconciliation-calendar .cal-header div {
-    text-align: center;
-    font-weight: 700;
-    color: var(--primary-color);
-    padding: 8px 4px;
-    font-size: 0.85rem;
+    text-align: center; font-weight: 700; color: var(--primary-color); padding: 8px 4px; font-size: 0.85rem;
 }
 .reconciliation-calendar .cal-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
+    display: grid; grid-template-columns: repeat(7,1fr); gap: 4px;
 }
 .reconciliation-calendar .cal-day {
-    aspect-ratio: 1;
-    border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: 1px solid var(--border-glass, rgba(255,255,255,0.1));
-    background: rgba(255,255,255,0.03);
-    position: relative;
-    min-height: 60px;
-    padding: 4px;
+    aspect-ratio: 1; border-radius: 8px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; cursor: pointer;
+    transition: all .2s ease; border: 1px solid var(--border-glass, rgba(255,255,255,.1));
+    background: rgba(255,255,255,.03); position: relative; min-height: 60px; padding: 4px;
 }
 .reconciliation-calendar .cal-day:hover {
-    border-color: var(--primary-color);
-    background: rgba(139,0,0,0.1);
-    transform: scale(1.05);
+    border-color: var(--primary-color); background: rgba(139,0,0,.1); transform: scale(1.05);
 }
-.reconciliation-calendar .cal-day.empty {
-    border: none;
-    background: none;
-    cursor: default;
-}
-.reconciliation-calendar .cal-day.empty:hover {
-    transform: none;
-}
-.reconciliation-calendar .cal-day .day-num {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--text-primary, #fff);
-}
-.reconciliation-calendar .cal-day .day-status {
-    font-size: 0.65rem;
-    margin-top: 2px;
-    text-align: center;
-    line-height: 1.2;
-}
-.reconciliation-calendar .cal-day.complete {
-    background: rgba(40,167,69,0.2);
-    border-color: #28a745;
-}
-.reconciliation-calendar .cal-day.complete .day-num {
-    color: #28a745;
-}
-.reconciliation-calendar .cal-day.complete .day-status {
-    color: #28a745;
-}
-.reconciliation-calendar .cal-day.partial {
-    background: rgba(255,193,7,0.15);
-    border-color: #ffc107;
-}
-.reconciliation-calendar .cal-day.partial .day-num {
-    color: #ffc107;
-}
-.reconciliation-calendar .cal-day.partial .day-status {
-    color: #ffc107;
-}
-.reconciliation-calendar .cal-day.today {
-    box-shadow: 0 0 0 2px var(--primary-color);
-}
-.reconciliation-calendar .cal-day.future {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
+.reconciliation-calendar .cal-day.empty { border: none; background: none; cursor: default; }
+.reconciliation-calendar .cal-day.empty:hover { transform: none; }
+.reconciliation-calendar .cal-day .day-num { font-size: 1.1rem; font-weight: 700; color: var(--text-primary, #fff); }
+.reconciliation-calendar .cal-day .day-status { font-size: .65rem; margin-top: 2px; text-align: center; line-height: 1.2; }
+.reconciliation-calendar .cal-day.complete { background: rgba(40,167,69,.2); border-color: #28a745; }
+.reconciliation-calendar .cal-day.complete .day-num { color: #28a745; }
+.reconciliation-calendar .cal-day.complete .day-status { color: #28a745; }
+.reconciliation-calendar .cal-day.partial { background: rgba(255,193,7,.15); border-color: #ffc107; }
+.reconciliation-calendar .cal-day.partial .day-num { color: #ffc107; }
+.reconciliation-calendar .cal-day.partial .day-status { color: #ffc107; }
+.reconciliation-calendar .cal-day.today { box-shadow: 0 0 0 2px var(--primary-color); }
+.reconciliation-calendar .cal-day.future { opacity: .4; cursor: not-allowed; }
 .reconciliation-calendar .cal-day.future:hover {
-    transform: none;
-    border-color: var(--border-glass, rgba(255,255,255,0.1));
-    background: rgba(255,255,255,0.03);
+    transform: none; border-color: var(--border-glass, rgba(255,255,255,.1)); background: rgba(255,255,255,.03);
 }
+
+/* ── Modal items ────────────────────────────────────── */
 .reconciliation-item {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border-glass, rgba(255,255,255,0.1));
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 8px;
+    background: rgba(255,255,255,.05); border: 1px solid var(--border-glass, rgba(255,255,255,.1));
+    border-radius: 8px; padding: 12px; margin-bottom: 8px;
 }
-.reconciliation-item .staff-name {
-    font-weight: 600;
-    color: var(--text-primary, #fff);
+.reconciliation-item .staff-name { font-weight: 600; color: var(--text-primary, #fff); }
+.reconciliation-item .reconcile-time { font-size: .8rem; color: var(--text-muted); }
+.reconciliation-item .reconcile-remark { margin-top: 6px; color: var(--text-secondary); font-size: .9rem; }
+
+/* ── Tab buttons ────────────────────────────────────── */
+.reconcile-tab.active { opacity: 1; }
+.reconcile-tab:not(.active) { opacity: .6; }
+
+/* ── History ────────────────────────────────────────── */
+.history-date-group { margin-bottom: 16px; }
+.history-date-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border-glass, rgba(255,255,255,.1));
 }
-.reconciliation-item .reconcile-time {
-    font-size: 0.8rem;
-    color: var(--text-muted);
+.history-date-header .date-label { font-weight: 700; color: var(--text-primary, #fff); font-size: 1rem; }
+.history-date-header .status-badge {
+    font-size: .75rem; padding: 2px 10px; border-radius: 12px; font-weight: 600;
 }
-.reconciliation-item .reconcile-remark {
-    margin-top: 6px;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-}
+.history-date-header .status-badge.complete { background: rgba(40,167,69,.2); color: #28a745; }
+.history-date-header .status-badge.partial  { background: rgba(255,193,7,.15); color: #ffc107; }
+
 @media (max-width: 600px) {
-    .reconciliation-calendar .cal-day {
-        min-height: 45px;
-    }
-    .reconciliation-calendar .cal-day .day-num {
-        font-size: 0.9rem;
-    }
-    .reconciliation-calendar .cal-day .day-status {
-        font-size: 0.55rem;
-    }
+    .reconciliation-calendar .cal-day { min-height: 45px; }
+    .reconciliation-calendar .cal-day .day-num { font-size: .9rem; }
+    .reconciliation-calendar .cal-day .day-status { font-size: .55rem; }
 }
 </style>
 

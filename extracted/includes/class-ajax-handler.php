@@ -207,6 +207,9 @@ class Stand120_Ajax_Handler {
             case 'get_reconciliation_for_date':
                 self::get_reconciliation_for_date();
                 break;
+            case 'get_reconciliation_history':
+                self::get_reconciliation_history();
+                break;
             
             default:
                 wp_send_json_error(array('message' => 'Invalid action'));
@@ -1516,6 +1519,23 @@ class Stand120_Ajax_Handler {
         }
         
         $result = Stand120_Reconciliation::get_for_date($date);
+        
+        wp_send_json_success($result);
+    }
+    
+    /**
+     * Get reconciliation history (paginated)
+     */
+    private static function get_reconciliation_history() {
+        if (!Stand120_Auth::is_admin()) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+            return;
+        }
+        
+        $page     = max(1, (int) ($_POST['page'] ?? 1));
+        $per_page = max(1, min(100, (int) ($_POST['per_page'] ?? 50)));
+        
+        $result = Stand120_Reconciliation::get_history($page, $per_page);
         
         wp_send_json_success($result);
     }

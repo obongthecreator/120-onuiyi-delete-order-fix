@@ -255,9 +255,8 @@ class Stand120_Database {
     
     /**
      * Repair reconciliation table keys.
-     * Drops any stale single-column UNIQUE KEY on reconcile_date and
-     * ensures the correct composite UNIQUE KEY date_staff exists.
-     * Also cleans up any corrupted 0000-00-00 rows.
+     * Nuclear approach: drops ALL non-PRIMARY indexes, deduplicates rows,
+     * cleans corrupted data, then recreates only the correct indexes.
      */
     public static function repair_reconciliation_keys() {
         global $wpdb;
@@ -269,43 +268,42 @@ class Stand120_Database {
             return;
         }
         
-        // Clean up any corrupted rows with 0000-00-00 date
-        $wpdb->query($wpdb->prepare("DELETE FROM $table WHERE reconcile_date = %s", '0000-00-00'));
+        $suppress = $wpdb->suppress_errors(true);
         
-        // Get all indexes on the table
-        $indexes = $wpdb->get_results("SHOW INDEX FROM $table");
-        if (!$indexes) {
-            return;
-        }
+        // Clean up corrupted rows
+        $wpdb->query("DELETE FROM {$table} WHERE reconcile_date IS NULL OR reconcile_date = '0000-00-00'");
         
-        // Build a map of key names to their columns
-        $keys = array();
-        foreach ($indexes as $idx) {
-            $key_name = $idx->Key_name;
-            if ($key_name === 'PRIMARY') continue;
-            if (!isset($keys[$key_name])) {
-                $keys[$key_name] = array(
-                    'unique' => !$idx->Non_unique,
-                    'columns' => array()
-                );
-            }
-            $keys[$key_name]['columns'][] = $idx->Column_name;
-        }
+        // Remove duplicate (date, staff_id) rows — keep highest id
+        $wpdb->query(
+            "DELETE t1 FROM {$table} t1
+             INNER JOIN {$table} t2
+             WHERE t1.reconcile_date = t2.reconcile_date
+               AND t1.staff_id = t2.staff_id
+               AND t1.id < t2.id"
+        );
         
-        // Drop any single-column UNIQUE key on reconcile_date alone
-        foreach ($keys as $key_name => $info) {
-            if ($info['unique'] && count($info['columns']) === 1 && $info['columns'][0] === 'reconcile_date') {
+        // Drop ALL non-PRIMARY indexes
+        $indexes = $wpdb->get_results("SHOW INDEX FROM {$table}");
+        if ($indexes) {
+            $dropped = array();
+            foreach ($indexes as $idx) {
+                $key_name = $idx->Key_name;
+                if ($key_name === 'PRIMARY' || in_array($key_name, $dropped, true)) {
+                    continue;
+                }
                 $safe_key_name = preg_replace('/[^a-zA-Z0-9_]/', '', $key_name);
                 if (!empty($safe_key_name)) {
-                    $wpdb->query("ALTER TABLE $table DROP INDEX `$safe_key_name`");
+                    $wpdb->query("ALTER TABLE {$table} DROP INDEX `{$safe_key_name}`");
+                    $dropped[] = $key_name;
                 }
             }
         }
         
-        // Ensure the composite unique key exists
-        if (!isset($keys['date_staff'])) {
-            $wpdb->query("ALTER TABLE $table ADD UNIQUE KEY date_staff (reconcile_date, staff_id)");
-        }
+        // Recreate correct indexes
+        $wpdb->query("ALTER TABLE {$table} ADD UNIQUE KEY date_staff (reconcile_date, staff_id)");
+        $wpdb->query("ALTER TABLE {$table} ADD KEY reconcile_date (reconcile_date)");
+        
+        $wpdb->suppress_errors($suppress);
     }
     
     /**

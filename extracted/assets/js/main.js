@@ -2323,218 +2323,341 @@ window.Login = {
 };
 
 /**
- * Reconciliation Calendar Module
+ * Reconciliation Calendar Module — rebuilt from scratch.
+ * Calendar view + History tab with pagination.
  */
 window.ReconciliationCalendar = {
     currentYear: new Date().getFullYear(),
     currentMonth: new Date().getMonth(),
     statusData: {},
     selectedDate: null,
-    
+    historyPage: 1,
+
+    /* ── Initialisation ─────────────────────────────── */
     init: function() {
         this.bindEvents();
         this.renderCalendar();
         this.loadStatus();
     },
-    
+
+    /* ── Event bindings ─────────────────────────────── */
     bindEvents: function() {
-        $(document).on('click', '#prevMonth', () => {
-            this.currentMonth--;
-            if (this.currentMonth < 0) {
-                this.currentMonth = 11;
-                this.currentYear--;
-            }
-            this.renderCalendar();
-            this.loadStatus();
-        });
-        
-        $(document).on('click', '#nextMonth', () => {
-            this.currentMonth++;
-            if (this.currentMonth > 11) {
-                this.currentMonth = 0;
-                this.currentYear++;
-            }
-            this.renderCalendar();
-            this.loadStatus();
-        });
-        
-        $(document).on('click', '.cal-day:not(.empty):not(.future)', (e) => {
-            const date = $(e.currentTarget).data('date');
-            if (date) {
-                this.openReconcileModal(date);
+        var self = this;
+
+        // Tab switching
+        $(document).on('click', '.reconcile-tab', function() {
+            var tab = $(this).data('tab');
+            $('.reconcile-tab').removeClass('active btn-primary').addClass('btn-secondary');
+            $(this).removeClass('btn-secondary').addClass('active btn-primary');
+            if (tab === 'calendar') {
+                $('#calendarTab').show();
+                $('#historyTab').hide();
+            } else {
+                $('#calendarTab').hide();
+                $('#historyTab').show();
+                self.loadHistory(1);
             }
         });
-        
-        $(document).on('click', '#submitReconcile', () => {
-            this.submitReconciliation();
+
+        // Calendar navigation
+        $(document).on('click', '#prevMonth', function() {
+            self.currentMonth--;
+            if (self.currentMonth < 0) { self.currentMonth = 11; self.currentYear--; }
+            self.renderCalendar();
+            self.loadStatus();
         });
-        
-        $(document).on('click', '#cancelReconcile, #closeReconcileComplete', () => {
-            this.closeModal();
+        $(document).on('click', '#nextMonth', function() {
+            self.currentMonth++;
+            if (self.currentMonth > 11) { self.currentMonth = 0; self.currentYear++; }
+            self.renderCalendar();
+            self.loadStatus();
         });
-        
-        // Close modal on overlay click
-        $(document).on('click', '#reconcileModal', (e) => {
-            if (e.target.id === 'reconcileModal') {
-                this.closeModal();
-            }
+
+        // Day click
+        $(document).on('click', '.cal-day:not(.empty):not(.future)', function() {
+            var date = $(this).data('date');
+            if (date) self.openReconcileModal(date);
+        });
+
+        // Submit
+        $(document).on('click', '#submitReconcile', function() {
+            self.submitReconciliation();
+        });
+
+        // Close / cancel
+        $(document).on('click', '#cancelReconcile, #closeReconcileComplete', function() {
+            self.closeModal();
+        });
+        $(document).on('click', '#reconcileModal', function(e) {
+            if (e.target.id === 'reconcileModal') self.closeModal();
+        });
+
+        // History pagination
+        $(document).on('click', '.history-page-btn', function() {
+            var page = parseInt($(this).data('page'), 10);
+            if (page > 0) self.loadHistory(page);
         });
     },
-    
+
+    /* ── Calendar rendering ─────────────────────────── */
     renderCalendar: function() {
-        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'];
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        
+        var monthNames = ['January','February','March','April','May','June',
+            'July','August','September','October','November','December'];
+        var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
         $('#calendarMonth').text(monthNames[this.currentMonth] + ' ' + this.currentYear);
-        
-        const firstDay = new Date(this.currentYear, this.currentMonth, 1).getDay();
-        const daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
-        const today = new Date();
-        const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-        
-        let html = '<div class="cal-header">';
-        dayNames.forEach(d => { html += '<div>' + d + '</div>'; });
+
+        var firstDay    = new Date(this.currentYear, this.currentMonth, 1).getDay();
+        var daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+        var today       = new Date();
+        var todayStr    = today.getFullYear() + '-' +
+                          String(today.getMonth() + 1).padStart(2,'0') + '-' +
+                          String(today.getDate()).padStart(2,'0');
+
+        var html = '<div class="cal-header">';
+        dayNames.forEach(function(d) { html += '<div>' + d + '</div>'; });
         html += '</div><div class="cal-grid">';
-        
-        // Empty cells before first day
-        for (let i = 0; i < firstDay; i++) {
+
+        for (var i = 0; i < firstDay; i++) {
             html += '<div class="cal-day empty"></div>';
         }
-        
-        // Day cells
-        for (let day = 1; day <= daysInMonth; day++) {
-            const dateStr = this.currentYear + '-' + String(this.currentMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
-            const isFuture = dateStr > todayStr;
-            const isToday = dateStr === todayStr;
-            
-            let statusClass = '';
-            let statusText = '';
-            
+
+        for (var day = 1; day <= daysInMonth; day++) {
+            var dateStr = this.currentYear + '-' +
+                          String(this.currentMonth + 1).padStart(2,'0') + '-' +
+                          String(day).padStart(2,'0');
+            var isFuture = dateStr > todayStr;
+            var isToday  = dateStr === todayStr;
+
+            var cls = '';
+            var statusText = '';
             if (this.statusData[dateStr]) {
-                const info = this.statusData[dateStr];
-                if (info.is_complete) {
-                    statusClass = 'complete';
-                    statusText = '<i class="fas fa-lock" style="font-size: 0.7rem;"></i>';
+                if (this.statusData[dateStr].is_complete) {
+                    cls = 'complete';
+                    statusText = '<i class="fas fa-lock" style="font-size:0.7rem"></i>';
                 } else {
-                    statusClass = 'partial';
+                    cls = 'partial';
                     statusText = '1/2';
                 }
             }
-            
-            if (isFuture) statusClass += ' future';
-            if (isToday) statusClass += ' today';
-            
-            html += '<div class="cal-day ' + statusClass + '" data-date="' + dateStr + '">';
+            if (isFuture) cls += ' future';
+            if (isToday)  cls += ' today';
+
+            html += '<div class="cal-day ' + cls + '" data-date="' + dateStr + '">';
             html += '<span class="day-num">' + day + '</span>';
-            if (statusText) {
-                html += '<span class="day-status">' + statusText + '</span>';
-            }
+            if (statusText) html += '<span class="day-status">' + statusText + '</span>';
             html += '</div>';
         }
-        
+
         html += '</div>';
         $('#reconciliationCalendar').html(html);
     },
-    
+
+    /* ── Load calendar status ───────────────────────── */
     loadStatus: function() {
-        const startDate = this.currentYear + '-' + String(this.currentMonth + 1).padStart(2, '0') + '-01';
-        const daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
-        const endDate = this.currentYear + '-' + String(this.currentMonth + 1).padStart(2, '0') + '-' + String(daysInMonth).padStart(2, '0');
-        
+        var self = this;
+        var startDate = this.currentYear + '-' + String(this.currentMonth + 1).padStart(2,'0') + '-01';
+        var dim       = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+        var endDate   = this.currentYear + '-' + String(this.currentMonth + 1).padStart(2,'0') + '-' + String(dim).padStart(2,'0');
+
         Stand120.ajax('get_reconciliation_status', {
             start_date: startDate,
-            end_date: endDate
-        }).then(response => {
+            end_date:   endDate
+        }).then(function(response) {
             if (response.success) {
-                this.statusData = response.data.dates || {};
-                this.renderCalendar();
+                self.statusData = response.data.dates || {};
+                self.renderCalendar();
             }
+        }).catch(function() {
+            // silent — calendar stays as-is
         });
     },
-    
+
+    /* ── Open modal for a date ──────────────────────── */
     openReconcileModal: function(date) {
+        var self = this;
         this.selectedDate = date;
-        const dateObj = new Date(date + 'T00:00:00');
-        const formatted = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-        
+
+        var dateObj   = new Date(date + 'T00:00:00');
+        var formatted = dateObj.toLocaleDateString('en-US', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+
         $('#reconcileDate').text(formatted);
         $('#reconcileRemark').val('');
-        
-        // Load details for this date
-        Stand120.ajax('get_reconciliation_for_date', { date: date }).then(response => {
+        $('#previousReconciliations').hide();
+        $('#reconcileForm').show();
+        $('#reconcileComplete').hide();
+        $('#submitReconcile').prop('disabled', false).html('<i class="fas fa-check"></i> Submit Reconciliation');
+
+        Stand120.ajax('get_reconciliation_for_date', { date: date }).then(function(response) {
             if (response.success) {
-                const data = response.data;
-                
-                // Show previous submissions
+                var data = response.data;
+
+                // Previous submissions
                 if (data.reconciliations && data.reconciliations.length > 0) {
-                    let listHtml = '';
-                    data.reconciliations.forEach(r => {
-                        const time = new Date(r.created_at).toLocaleString();
+                    var listHtml = '';
+                    data.reconciliations.forEach(function(r) {
+                        var time = new Date(r.created_at).toLocaleString();
                         listHtml += '<div class="reconciliation-item">';
-                        listHtml += '<div class="staff-name"><i class="fas fa-user-check"></i> ' + (r.staff_name || 'Admin') + '</div>';
+                        listHtml += '<div class="staff-name"><i class="fas fa-user-check"></i> ' +
+                                    self.escapeHtml(r.staff_name || 'Admin') + '</div>';
                         listHtml += '<div class="reconcile-time">' + time + '</div>';
                         if (r.remark) {
-                            listHtml += '<div class="reconcile-remark"><i class="fas fa-comment"></i> ' + r.remark + '</div>';
+                            listHtml += '<div class="reconcile-remark"><i class="fas fa-comment"></i> ' +
+                                        self.escapeHtml(r.remark) + '</div>';
                         }
                         listHtml += '</div>';
                     });
                     $('#reconciliationList').html(listHtml);
                     $('#previousReconciliations').show();
-                } else {
-                    $('#previousReconciliations').hide();
                 }
-                
-                // Show form or complete message
+
                 if (data.is_complete) {
                     $('#reconcileForm').hide();
                     $('#reconcileComplete').show();
                 } else {
                     $('#reconcileForm').show();
                     $('#reconcileComplete').hide();
-                    
                     if (data.has_submitted) {
                         $('#submitReconcile').html('<i class="fas fa-edit"></i> Update Reconciliation');
                     } else {
                         $('#submitReconcile').html('<i class="fas fa-check"></i> Submit Reconciliation');
                     }
                 }
-                
+
                 $('#reconcileModal').css('display', 'flex');
+            } else {
+                Stand120.showAlert('danger', response.data && response.data.message ? response.data.message : 'Failed to load date details');
             }
+        }).catch(function() {
+            Stand120.showAlert('danger', 'Network error loading date details');
         });
     },
-    
+
+    /* ── Submit reconciliation ──────────────────────── */
     submitReconciliation: function() {
         if (!this.selectedDate) return;
-        
-        const remark = $('#reconcileRemark').val().trim();
-        
-        $('#submitReconcile').prop('disabled', true).html('<span class="loading-spinner"></span> Submitting...');
-        
+        var self   = this;
+        var remark = $('#reconcileRemark').val().trim();
+
+        $('#submitReconcile').prop('disabled', true).html('<span class="loading-spinner"></span> Submitting…');
+
         Stand120.ajax('submit_reconciliation', {
-            date: this.selectedDate,
+            date:   this.selectedDate,
             remark: remark
-        }).then(response => {
+        }).then(function(response) {
             $('#submitReconcile').prop('disabled', false);
-            
             if (response.success) {
-                Stand120.showAlert('success', response.data.message);
-                this.closeModal();
-                this.loadStatus();
+                Stand120.showAlert('success', response.data.message || 'Reconciliation submitted!');
+                self.closeModal();
+                self.loadStatus();
             } else {
-                Stand120.showAlert('danger', response.data?.message || 'Failed to submit reconciliation');
+                var msg = (response.data && response.data.message) ? response.data.message : 'Submission failed. Please try again.';
+                Stand120.showAlert('danger', msg);
                 $('#submitReconcile').html('<i class="fas fa-check"></i> Submit Reconciliation');
             }
-        }).catch(() => {
+        }).catch(function() {
             $('#submitReconcile').prop('disabled', false).html('<i class="fas fa-check"></i> Submit Reconciliation');
-            Stand120.showAlert('danger', 'Failed to submit reconciliation');
+            Stand120.showAlert('danger', 'Network error. Please check your connection and try again.');
         });
     },
-    
+
+    /* ── Close modal ────────────────────────────────── */
     closeModal: function() {
         $('#reconcileModal').hide();
         this.selectedDate = null;
+    },
+
+    /* ── Load history (paginated) ───────────────────── */
+    loadHistory: function(page) {
+        var self = this;
+        this.historyPage = page;
+        $('#reconciliationHistoryList').html(
+            '<p style="color:var(--text-muted);text-align:center;padding:40px 0">' +
+            '<i class="fas fa-spinner fa-spin"></i> Loading history…</p>'
+        );
+        $('#historyPagination').html('');
+
+        Stand120.ajax('get_reconciliation_history', { page: page, per_page: 30 }).then(function(response) {
+            if (response.success) {
+                var data = response.data;
+                if (!data.records || data.records.length === 0) {
+                    $('#reconciliationHistoryList').html(
+                        '<p style="color:var(--text-muted);text-align:center;padding:40px 0">' +
+                        '<i class="fas fa-inbox"></i> No reconciliation records yet.</p>'
+                    );
+                    return;
+                }
+
+                var html = '';
+                data.records.forEach(function(group) {
+                    var dateObj = new Date(group.date + 'T00:00:00');
+                    var formatted = dateObj.toLocaleDateString('en-US', {
+                        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+                    });
+                    var badge = group.is_complete
+                        ? '<span class="status-badge complete"><i class="fas fa-lock"></i> Complete</span>'
+                        : '<span class="status-badge partial"><i class="fas fa-clock"></i> Partial</span>';
+
+                    html += '<div class="history-date-group">';
+                    html += '<div class="history-date-header">';
+                    html += '<span class="date-label">' + formatted + '</span> ' + badge;
+                    html += '</div>';
+
+                    group.reconciliations.forEach(function(r) {
+                        var time = new Date(r.created_at).toLocaleString();
+                        html += '<div class="reconciliation-item">';
+                        html += '<div class="staff-name"><i class="fas fa-user-check"></i> ' +
+                                self.escapeHtml(r.staff_name || 'Admin') + '</div>';
+                        html += '<div class="reconcile-time">' + time + '</div>';
+                        if (r.remark) {
+                            html += '<div class="reconcile-remark"><i class="fas fa-comment"></i> ' +
+                                    self.escapeHtml(r.remark) + '</div>';
+                        }
+                        html += '</div>';
+                    });
+
+                    html += '</div>';
+                });
+
+                $('#reconciliationHistoryList').html(html);
+
+                // Pagination
+                if (data.total_pages > 1) {
+                    var pHtml = '';
+                    if (data.page > 1) {
+                        pHtml += '<button class="btn btn-secondary btn-sm history-page-btn" data-page="' + (data.page - 1) + '">' +
+                                 '<i class="fas fa-chevron-left"></i></button>';
+                    }
+                    pHtml += '<span style="color:var(--text-secondary);padding:4px 12px">' +
+                             'Page ' + data.page + ' of ' + data.total_pages + '</span>';
+                    if (data.page < data.total_pages) {
+                        pHtml += '<button class="btn btn-secondary btn-sm history-page-btn" data-page="' + (data.page + 1) + '">' +
+                                 '<i class="fas fa-chevron-right"></i></button>';
+                    }
+                    $('#historyPagination').html(pHtml);
+                }
+            } else {
+                $('#reconciliationHistoryList').html(
+                    '<p style="color:#dc3545;text-align:center;padding:40px 0">' +
+                    '<i class="fas fa-exclamation-triangle"></i> Failed to load history.</p>'
+                );
+            }
+        }).catch(function() {
+            $('#reconciliationHistoryList').html(
+                '<p style="color:#dc3545;text-align:center;padding:40px 0">' +
+                '<i class="fas fa-exclamation-triangle"></i> Network error loading history.</p>'
+            );
+        });
+    },
+
+    /* ── Utility: escape HTML ───────────────────────── */
+    escapeHtml: function(str) {
+        if (!str) return '';
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
     }
 };
 
